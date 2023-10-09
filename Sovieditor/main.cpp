@@ -202,7 +202,7 @@ class Slider {
 		}
 		
 		if(inUse) {
-			if(mcords->x >= GreyBlockSize && mcords->y >= 0 && mcords->x <= window->getSize().x && mcords->y + (int)getUebersetzung() + 10 <= window->getSize().y) {
+			if(mcords->x >= GreyBlockSize && mcords->y >= 0 && mcords->x <= window->getSize().x && mcords->y + (int)getUebersetzung() + 10 <= window->getSize().y && pos + mcords->y - mPosBef >= 0) {
 				int difference = (float)mPosBef - mcords->y;
 				
 				float ue = (float)(linesNr) / ((float)window->getSize().y - getUebersetzung());
