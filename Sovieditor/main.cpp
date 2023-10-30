@@ -297,8 +297,7 @@ public:
 	void setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
 	void setMousePosYToLine(Text &text, sf::Vector2i &mcords);
 	void setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords);
-	bool setMousePosXToCursorPosXOutOfBounds(Editor &editor, Text &text, sf::Vector2i &mcords);
-	void setMousePosXToCursorPosXRegular(Editor &editor, Text &text, sf::Vector2i &mcords);
+	void setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords);
 
 	int getPosY() {
 		return posY;
@@ -557,22 +556,23 @@ void Slider::loadDraw(Editor &editor, sf::RenderWindow &window) {
 	window.draw(sliderRect);
 }
 
-bool Cursor::setMousePosXToCursorPosXOutOfBounds(Editor &editor, Text &text, sf::Vector2i &mcords) {
+void Cursor::setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords) {
 	if(mcords.x <= editor.getGreyBlockSize()) {
 		posX = editor.getGreyBlockSize();
-		return true;
-	}else if(mcords.x >= text.getTextWidth()) {
-		posX = text.getTextWidth();
-		return true;
+		return;
 	}
 
-	return false;
+	if(charSize - mcords.x - editor.getGreyBlockSize() > mcords.x - editor.getGreyBlockSize() - charSizeBef) {
+		posX = charSizeBef + editor.getGreyBlockSize();
+	}else {
+		posX = charSize + editor.getGreyBlockSize();
+	} 
 }
 
-void Cursor::setMousePosXToCursorPosXRegular(Editor &editor, Text &text, sf::Vector2i &mcords) {
+void Cursor::setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords) {
 	int charSize = 0;
 	int charSizeBef = 0;
-	for(int i = 0;i<text.getLineSize();++i) {
+	for(int i = 0;i<text.getLine(cursorLineNr).size();++i) {
 		charSizeBef = charSize;
 
 		if(text.getLine(cursorLineNr).at(i) == '	') {
@@ -581,17 +581,13 @@ void Cursor::setMousePosXToCursorPosXRegular(Editor &editor, Text &text, sf::Vec
 			charSize += text.getCharWidth();
 		}
 
-		if(charSize >= mcords.x) {
-			posX = charSizeBef;
+		if(charSize >= mcords.x - editor.getGreyBlockSize()) {
+			setMousePosXToCursorPosXValues(editor, text, charSize, charSizeBef, mcords);
 			return;
 		}
 	}
-}
 
-void Cursor::setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords) {
-	if(!setMousePosXToCursorPosXOutOfBounds(editor, text, mcords)) {
-		setMousePosXToCursorPosXRegular(editor, text, mcords);
-	}
+	posX = charSize + editor.getGreyBlockSize();
 }
 
 void Cursor::setMousePosYToLine(Text &text, sf::Vector2i &mcords) {
@@ -610,6 +606,7 @@ void Cursor::cursorMouseClicked(Editor &editor, Text &text, sf::Event &event, sf
 	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
 		if(mcords.x >= 0 && mcords.x <= editor.wGetSize().x && mcords.y >= 0 && mcords.y <= editor.wGetSize().y) {
 			setMousePosToCursorPos(editor, text, event, mcords);
+			showCursor();
 		}
 	}
 }
