@@ -86,6 +86,12 @@ struct TextWidths {
 	int textWidth;
 };
 
+struct cursorPosition {
+	int lineNr;
+	int posX;
+	int posY;
+};
+
 class Syntax;
 class Slider;
 class Cursor;
@@ -306,9 +312,10 @@ public:
 	int setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords);
 	int getTabsForNewLine(Text &text, int tillPos);
 	void setPosYBottomLine(Editor &editor, Text &text);
-	void createNewLineSetNewLineParameters(Editor &editor, Text &text, int tillPos, int tabNr);
+	void createNewLineSetNewLineParameters(Editor &editor, Text &text, int &lineNr, int tillPos, int tabNr);
 	void setNormalBackspace(Editor &editor, Text &text, int cursorCharNr);
 	void setDeleteLineBackspace(Editor &editor, Text &text);
+	cursorPosition cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY);
 
 	void releaseCursorMouse() {
 		markingText = false;
@@ -384,6 +391,8 @@ public:
 	void loadDraw();
 	void loadEditor();
 	void loadAllEvents(sf::Event &event);
+	void loadSwitchKeyPressedEvents(sf::Event &event);
+	void loadSwitchKeyReleasedEvents(sf::Event &event);
 	void loadAllDraws();
 	void loadLoop();
 	void loadVars();
@@ -628,7 +637,7 @@ bool Cursor::checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int 
 }
 
 void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	
+
 }
 
 void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
@@ -825,14 +834,13 @@ void Cursor::setPosYBottomLine(Editor &editor, Text &text) {
 	}
 }
 
-void Cursor::createNewLineSetNewLineParameters(Editor &editor, Text &text, int tillPos, int tabNr) {
-	std::string insertStr = text.getLine(cursorLineNr).substr(tillPos, text.getLine(cursorLineNr).length());
-	std::string remainingStr = text.getLine(cursorLineNr).substr(0, tillPos);
-	cursorLineNr++;
-	text.insertLines(cursorLineNr, std::string(tabNr, '	') + insertStr);
-	text.setText(cursorLineNr-1, remainingStr);
-	posX = editor.getGreyBlockSize() + tabNr * text.getTabWidth();
-	text.loadTextWidthsBounds(cursorLineNr);
+void Cursor::createNewLineSetNewLineParameters(Editor &editor, Text &text, int &lineNr, int tillPos, int tabNr) {
+	std::string insertStr = text.getLine(lineNr).substr(tillPos, text.getLine(lineNr).length());
+	std::string remainingStr = text.getLine(lineNr).substr(0, tillPos);
+	lineNr++;
+	text.insertLines(lineNr, std::string(tabNr, '	') + insertStr);
+	text.setText(lineNr-1, remainingStr);
+	//text.loadTextWidthsBounds(lineNr);
 }
 
 bool Cursor::cursorEnter(Editor &editor, Text &text) {
@@ -845,9 +853,20 @@ bool Cursor::cursorEnter(Editor &editor, Text &text) {
 
 	setPosYBottomLine(editor, text);
 
-	createNewLineSetNewLineParameters(editor, text, strPos, getTabsForNewLine(text, strPos));
+	int tabNr = getTabsForNewLine(text, strPos);
+
+	createNewLineSetNewLineParameters(editor, text, cursorLineNr, strPos, tabNr);
+
+	posX = editor.getGreyBlockSize() + tabNr * text.getTabWidth();
 
 	return true;
+}
+
+cursorPosition Cursor::cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY) {
+	cursorPosition returnCP;
+	returnCP.lineNr = lineNr;
+	returnCP.posX = linePosX;
+	returnCP.posY = linePosY;
 }
 
 void Cursor::loadEvents(Editor &editor, sf::Event &event, Text &text) {
@@ -1037,104 +1056,121 @@ void Editor::loadAllEvents(sf::Event &event) {
 	}
 
 	if(event.type == sf::Event::KeyPressed) {
-		switch(event.key.code) {
-			case sf::Keyboard::Backspace:
-				if(cursor.cursorBackspace(*this, text)) {
-					text.denieInput();
-				}	
-				break;
-			case sf::Keyboard::Left:
-				if(cursor.cursorLeft(*this, text)) {
-				}	
-				break;
-			case sf::Keyboard::Right:
-				if(cursor.cursorRight(*this, text)) {
-				}	
-				break;
-			case sf::Keyboard::Up:
-				if(cursor.cursorUp(*this, text)) {
-				}
-				break;
-			case sf::Keyboard::Down:
-				if(cursor.cursorDown(*this, text)) {
-				}	
-				break;
-			case sf::Keyboard::Enter:
-				if(cursor.cursorEnter(*this, text)) {
-					text.denieInput();
-				}	
-				break;
-			case sf::Keyboard::U:
-				if(getCTRL()) {
-					cursor.cursorU(*this, text);
-					text.denieInput();
-				}	
-				break;
-			case sf::Keyboard::D:
-				if(getCTRL()) {
-					cursor.cursorD(*this, text);
-					text.denieInput();
-				}	
-				break;
-			case sf::Keyboard::O:
-				if(getCTRL()) {
-					loadEditor();
-					offCTRL();
-					text.denieInput();
-				}	
-				break;
-			case sf::Keyboard::S:
-				if(getCTRL()) {
-					writeFile(text);
-					offCTRL();
-					text.denieInput();
-				}
-				break;	
-			case sf::Keyboard::LControl:
-				onCTRL();
-				break;	
-			case sf::Keyboard::RAlt: //In order to scheiß auf control
-				offCTRL();
-				onAlt();
-				break;	
-			default:
-				break;
-		}
-		cursor.showCursor();
-	}
+		loadSwitchKeyPressedEvents(event);
+	}	
 
 	if(event.type == sf::Event::KeyReleased) {
-		switch(event.key.code) {
-			case sf::Keyboard::Backspace:
-				text.setAllowInput();
-				break;
-			case sf::Keyboard::Left:
-				break;
-			case sf::Keyboard::Right:
-				break;
-			case sf::Keyboard::Up:
-				break;
-			case sf::Keyboard::Down:
-				break;	
-			case sf::Keyboard::Enter:
-				text.setAllowInput();
-				break;
-			case sf::Keyboard::LControl:
-				offCTRL();
-				text.setAllowInput();
-				break;
-			case sf::Keyboard::RAlt:
-				offAlt();
-				break;
-			default:
-				break;
-		}
+		loadSwitchKeyReleasedEvents(event);
 	}
 
 	int *nothing;
 	text.countChars(&nothing, *this, text.getLine(cursor.getCursorLineNr()), cursor, text.countCharsSize);
 
 	slider.updateSlider(*this, cursor, text);
+}
+
+void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
+	switch(event.key.code) {
+		case sf::Keyboard::Backspace:
+			if(cursor.cursorBackspace(*this, text)) {
+				text.denieInput();
+			}	
+			break;
+		case sf::Keyboard::Left:
+			if(cursor.cursorLeft(*this, text)) {
+			}	
+			break;
+		case sf::Keyboard::Right:
+			if(cursor.cursorRight(*this, text)) {
+			}	
+			break;
+		case sf::Keyboard::Up:
+			if(cursor.cursorUp(*this, text)) {
+			}
+			break;
+		case sf::Keyboard::Down:
+			if(cursor.cursorDown(*this, text)) {
+			}	
+			break;
+		case sf::Keyboard::Enter:
+			if(cursor.cursorEnter(*this, text)) {
+				text.denieInput();
+			}	
+			break;
+		case sf::Keyboard::U:
+			if(getCTRL()) {
+				cursor.cursorU(*this, text);
+				text.denieInput();
+			}	
+			break;
+		case sf::Keyboard::D:
+			if(getCTRL()) {
+				cursor.cursorD(*this, text);
+				text.denieInput();
+			}	
+			break;
+		case sf::Keyboard::O:
+			if(getCTRL()) {
+				loadEditor();
+				offCTRL();
+				text.denieInput();
+			}	
+			break;
+		case sf::Keyboard::S:
+			if(getCTRL()) {
+				writeFile(text);
+				offCTRL();
+				text.denieInput();
+			}
+			break;	
+		case sf::Keyboard::V:
+			if(getCTRL()) {
+				cursorPosition cp;
+				cp = cursor.cursorInsertText(*this, text, sf::Clipboard::getString().toAnsiString(), cursor.getCursorLineNr(), cursor.getPosX(), cursor.getPosY());
+				cursor.setCursorLineNr(cp.lineNr);
+				cursor.setPosX(cp.posX);
+				cursor.setPosY(cp.posY);
+			}
+			break;
+		case sf::Keyboard::LControl:
+			onCTRL();
+			break;	
+		case sf::Keyboard::RAlt: //In order to scheiß auf control
+			offCTRL();
+			onAlt();
+			break;	
+		default:
+			break;
+	}
+	cursor.showCursor();
+}
+
+void Editor::loadSwitchKeyReleasedEvents(sf::Event &event) {
+	switch(event.key.code) {
+		case sf::Keyboard::Backspace:
+			text.setAllowInput();
+			break;
+		case sf::Keyboard::Left:
+			break;
+		case sf::Keyboard::Right:
+			break;
+		case sf::Keyboard::Up:
+			break;
+		case sf::Keyboard::Down:
+			break;	
+		case sf::Keyboard::Enter:
+			text.setAllowInput();
+			break;
+		case sf::Keyboard::LControl:
+			offCTRL();
+			text.setAllowInput();
+			break;
+		case sf::Keyboard::RAlt:
+			offAlt();
+			break;
+		default:
+			break;
+	}
 }
 
 /*
