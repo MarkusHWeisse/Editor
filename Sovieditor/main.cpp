@@ -272,13 +272,14 @@ private:
 	int cursorLineNr;
 	int cursorBlink;
 	int cursorShow;
+	bool markingText;
 	sf::RectangleShape cursorDraw;
 	sf::RectangleShape cursorBackground;
 
 public:
 
 	Cursor() {
-
+		this->markingText = false;
 	}
 
 	void loadEvents(Editor &editor, sf::Event &event, Text &text);
@@ -294,16 +295,24 @@ public:
 	bool cursorEnter(Editor &editor, Text &text);
 	bool cursorU(Editor &editor, Text &text);
 	bool cursorD(Editor &editor, Text &text);
-	void cursorMouseClicked(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	void cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	void cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	void cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	bool checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int screenPosY, int screenWidth, int screenHeight);
 	void setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
 	void setMousePosYToLine(Text &text, sf::Vector2i &mcords);
-	void setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords);
-	void setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords);
+	int getMousePosYToLineNr(int mousePosY, int fontSize, int topSpace);
+	int setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords, int lineNr);
+	int setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords);
 	int getTabsForNewLine(Text &text, int tillPos);
 	void setPosYBottomLine(Editor &editor, Text &text);
 	void createNewLineSetNewLineParameters(Editor &editor, Text &text, int tillPos, int tabNr);
 	void setNormalBackspace(Editor &editor, Text &text, int cursorCharNr);
 	void setDeleteLineBackspace(Editor &editor, Text &text);
+
+	void releaseCursorMouse() {
+		markingText = false;
+	}
 
 	int getPosY() {
 		return posY;
@@ -562,42 +571,48 @@ void Slider::loadDraw(Editor &editor, sf::RenderWindow &window) {
 	window.draw(sliderRect);
 }
 
-void Cursor::setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords) {
+int Cursor::setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords) {
+	int r;
+	
 	if(mcords.x <= editor.getGreyBlockSize()) {
-		posX = editor.getGreyBlockSize();
-		return;
+		return editor.getGreyBlockSize();
 	}
 
 	if(charSize - mcords.x - editor.getGreyBlockSize() > mcords.x - editor.getGreyBlockSize() - charSizeBef) {
-		posX = charSizeBef + editor.getGreyBlockSize();
+		r = charSizeBef + editor.getGreyBlockSize();
 	}else {
-		posX = charSize + editor.getGreyBlockSize();
+		r = charSize + editor.getGreyBlockSize();
 	} 
+
+	return r;
 }
 
-void Cursor::setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords) {
+int Cursor::setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords, int lineNr) {
 	int charSize = 0;
 	int charSizeBef = 0;
-	for(int i = 0;i<text.getLine(cursorLineNr).size();++i) {
+	for(int i = 0;i<text.getLine(lineNr).size();++i) {
 		charSizeBef = charSize;
 
-		if(text.getLine(cursorLineNr).at(i) == '	') {
+		if(text.getLine(lineNr).at(i) == '	') {
 			charSize += text.getTabWidth();
 		}else {
 			charSize += text.getCharWidth();
 		}
 
 		if(charSize >= mcords.x - editor.getGreyBlockSize()) {
-			setMousePosXToCursorPosXValues(editor, text, charSize, charSizeBef, mcords);
-			return;
+			return setMousePosXToCursorPosXValues(editor, text, charSize, charSizeBef, mcords);
 		}
 	}
 
-	posX = charSize + editor.getGreyBlockSize();
+	return charSize + editor.getGreyBlockSize();
+}
+
+int Cursor::getMousePosYToLineNr(int mousePosY, int fontSize, int topSpace) {
+	return (int)((mousePosY - topSpace) / fontSize);
 }
 
 void Cursor::setMousePosYToLine(Text &text, sf::Vector2i &mcords) {
-	cursorLineNr = (int)((mcords.y - 3) / text.getFontSizeSpacing());
+	cursorLineNr = getMousePosYToLineNr(mcords.y, text.getFontSizeSpacing(), 3);
 	posY = cursorLineNr;
 	cursorLineNr += text.getBottomLine() - 1;
 }
@@ -605,15 +620,29 @@ void Cursor::setMousePosYToLine(Text &text, sf::Vector2i &mcords) {
 void Cursor::setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
 	setMousePosYToLine(text, mcords);
 
-	setMousePosXToCursorX(editor, text, mcords);
+	posX = setMousePosXToCursorX(editor, text, mcords, cursorLineNr);
 }
 
-void Cursor::cursorMouseClicked(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left)) {
-		if(mcords.x >= 0 && mcords.x <= editor.wGetSize().x && mcords.y >= 0 && mcords.y <= editor.wGetSize().y) {
-			setMousePosToCursorPos(editor, text, event, mcords);
-			showCursor();
-		}
+bool Cursor::checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int screenPosY, int screenWidth, int screenHeight) {
+	return mcords.x >= screenPosX && mcords.x <= screenWidth && mcords.y >= screenPosY && mcords.y <= screenHeight;
+}
+
+void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
+	
+}
+
+void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
+	if(!markingText) {
+		setMousePosToCursorPos(editor, text, event, mcords);
+		showCursor();
+	}else {
+		cursorMouseMarking(editor, text, event, mcords);
+	}	
+}
+
+void Cursor::cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
+	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, 0, editor.wGetSize().x, editor.wGetSize().y)) {
+		cursorMouseEventRecognition(editor, text, event, mcords);
 	}
 }
 
@@ -1000,10 +1029,11 @@ void Editor::loadAllEvents(sf::Event &event) {
 		text.loadEvents(*this, cursor, event);
 	}
 
-	cursor.cursorMouseClicked(*this, text, event, mcords);
+	cursor.cursorMouseEvent(*this, text, event, mcords);
 
 	if (event.type == sf::Event::MouseButtonReleased) {
 		slider.escapeEvent();
+		cursor.releaseCursorMouse();
 	}
 
 	if(event.type == sf::Event::KeyPressed) {
