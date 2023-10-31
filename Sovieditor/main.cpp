@@ -188,6 +188,7 @@ public:
 	void loadEvents(Editor &editor, Cursor &cursor, sf::Event &event);
 	void loadDraw(sf::RenderWindow &window, Editor &editor);
 	void countChars(void* outVal, Editor &editor, std::string s1, Cursor &cursor, void func(int* outVal2, int* igive, int* sgive));
+	int getSize(int lineNr);
 	//void countCharsTab(int* i, int* size, int* i2);
 
 	int getFontSize() {
@@ -754,7 +755,7 @@ bool Cursor::cursorBackspace(Editor &editor, Text &text) {
 		text.deleteLine(cursorLineNr);
 		cursorLineNr--;
 		text.loadTextWidthsBounds(cursorLineNr);
-		posX = editor.getGreyBlockSize() + text.getLine(cursorLineNr).length() * text.getCharWidth();
+		posX = editor.getGreyBlockSize() + text.getSize(cursorLineNr);
 		text.addText(cursorLineNr, deletedLine);
 		text.loadTextWidthsBounds(cursorLineNr);
 		posY--;
@@ -790,7 +791,7 @@ bool Cursor::cursorEnter(Editor &editor, Text &text) {
 	std::string insertStr = text.getLine(cursorLineNr).substr(strPos, text.getLine(cursorLineNr).length());
 	std::string remainingStr = text.getLine(cursorLineNr).substr(0, strPos);
 	cursorLineNr++;
-	text.insertLines(cursorLineNr, tabs + insertStr);
+	text.insertLines(cursorLineNr, std::string(tabNr, '	') + insertStr);
 	text.setText(cursorLineNr-1, remainingStr);
 	posX = editor.getGreyBlockSize() + tabNr * text.getTabWidth();
 	text.loadTextWidthsBounds(cursorLineNr);
@@ -1117,6 +1118,18 @@ void Text::countChars(void* outVal, Editor &editor, std::string s1, Cursor &curs
 		
 	cursor.setPosX(sizeChars + editor.getGreyBlockSize());
 		
+}
+
+int Text::getSize(int lineNr) {
+	int j = 0;
+	for(int i = 0;i < lines.at(lineNr).size();++i) {
+		if(lines.at(lineNr).at(i) == '	') {
+			j += getTabWidth();
+		}else {
+			j += getCharWidth();
+		}
+	}
+	return j;
 }
 
 void Text::loadEvents(Editor &editor, Cursor &cursor, sf::Event &event) {
