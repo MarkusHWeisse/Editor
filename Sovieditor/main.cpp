@@ -299,6 +299,11 @@ public:
 	void setMousePosYToLine(Text &text, sf::Vector2i &mcords);
 	void setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords);
 	void setMousePosXToCursorPosXValues(Editor &editor, Text &text, int charSize, int charSizeBef, sf::Vector2i &mcords);
+	int getTabsForNewLine(Text &text, int tillPos);
+	void setPosYBottomLine(Editor &editor, Text &text);
+	void createNewLineSetNewLineParameters(Editor &editor, Text &text, int tillPos, int tabNr);
+	void setNormalBackspace(Editor &editor, Text &text, int cursorCharNr);
+	void setDeleteLineBackspace(Editor &editor, Text &text);
 
 	int getPosY() {
 		return posY;
@@ -733,6 +738,29 @@ bool Cursor::cursorDown(Editor &editor, Text &text) {
 	return true;
 }
 
+void Cursor::setNormalBackspace(Editor &editor, Text &text, int cursorCharNr) {
+	int nextChar = 0;
+	text.countChars(&nextChar, editor, text.getLine(cursorLineNr), *this, text.countCharsSize);
+	if(text.getLine(cursorLineNr).at(nextChar - 1) == '	') {
+		posX-=text.getTabWidth();
+	}else {
+		posX-=text.getCharWidth();
+	}
+	text.insertText(cursorLineNr, cursorCharNr, ' ', true);
+	text.loadTextWidthsBounds(cursorLineNr);
+}
+
+void Cursor::setDeleteLineBackspace(Editor &editor, Text &text) {
+	std::string deletedLine = text.getLine(cursorLineNr);
+	text.deleteLine(cursorLineNr);
+	cursorLineNr--;
+	text.loadTextWidthsBounds(cursorLineNr);
+	posX = editor.getGreyBlockSize() + text.getSize(cursorLineNr);
+	text.addText(cursorLineNr, deletedLine);
+	text.loadTextWidthsBounds(cursorLineNr);
+	posY--;
+}
+
 bool Cursor::cursorBackspace(Editor &editor, Text &text) {
 	if(editor.getCTRL()) {
 		return false;
@@ -741,26 +769,41 @@ bool Cursor::cursorBackspace(Editor &editor, Text &text) {
 	int cursorCharNr = 0;
 	text.countChars(&cursorCharNr, editor, text.getLine(cursorLineNr), *this, text.countCharsSize);
 	if((posX-editor.getGreyBlockSize()) != 0) {
-		int nextChar = 0;
-		text.countChars(&nextChar, editor, text.getLine(cursorLineNr), *this, text.countCharsSize);
-		if(text.getLine(cursorLineNr).at(nextChar - 1) == '	') {
-			posX-=text.getTabWidth();
-		}else {
-			posX-=text.getCharWidth();
-		}
-		text.insertText(cursorLineNr, cursorCharNr, ' ', true);
-		text.loadTextWidthsBounds(cursorLineNr);		
+		setNormalBackspace(editor, text, cursorCharNr);		
 	}else if((posX - editor.getGreyBlockSize()) == 0 && cursorLineNr > 0) {
-		std::string deletedLine = text.getLine(cursorLineNr);
-		text.deleteLine(cursorLineNr);
-		cursorLineNr--;
-		text.loadTextWidthsBounds(cursorLineNr);
-		posX = editor.getGreyBlockSize() + text.getSize(cursorLineNr);
-		text.addText(cursorLineNr, deletedLine);
-		text.loadTextWidthsBounds(cursorLineNr);
-		posY--;
+		setDeleteLineBackspace(editor, text);
 	}
 	return true;
+}
+
+int Cursor::getTabsForNewLine(Text &text, int tillPos) {
+	int tabNr = 0;
+	for (int i = 0;i<text.getLine(cursorLineNr).length() && i<tillPos;i++) {
+		if(text.getLine(cursorLineNr).at(i) == '	') {
+			tabNr++;
+		}else {
+			break;
+		}	
+	}
+	return tabNr;
+}
+
+void Cursor::setPosYBottomLine(Editor &editor, Text &text) {
+	if((posY+1) > (int)((editor.wGetSize().y - 3) / text.getFontSizeSpacing()) - 1) {
+		text.setBottomLine(text.getBottomLine() + 1);
+	}else {
+		posY++;
+	}
+}
+
+void Cursor::createNewLineSetNewLineParameters(Editor &editor, Text &text, int tillPos, int tabNr) {
+	std::string insertStr = text.getLine(cursorLineNr).substr(tillPos, text.getLine(cursorLineNr).length());
+	std::string remainingStr = text.getLine(cursorLineNr).substr(0, tillPos);
+	cursorLineNr++;
+	text.insertLines(cursorLineNr, std::string(tabNr, '	') + insertStr);
+	text.setText(cursorLineNr-1, remainingStr);
+	posX = editor.getGreyBlockSize() + tabNr * text.getTabWidth();
+	text.loadTextWidthsBounds(cursorLineNr);
 }
 
 bool Cursor::cursorEnter(Editor &editor, Text &text) {
@@ -769,32 +812,11 @@ bool Cursor::cursorEnter(Editor &editor, Text &text) {
 	}
 
 	int strPos = 0;
-	text.countChars(&strPos, editor, text.getLine(cursorLineNr), *this, text.countCharsSize);
+	text.countChars(&strPos, editor, text.getLine(cursorLineNr), *this, text.countCharsSize);	
 
-	std::string tabs = "";
-	int tabNr = 0;
-	for (int i = 0;i<text.getLine(cursorLineNr).length() && i<strPos;i++) {
-		if(text.getLine(cursorLineNr).at(i) == '	') {
-			tabs += "	";
-			tabNr++;
-		}else {
-			break;
-		}	
-	}	
-	
-	if((posY+1) > (int)((editor.wGetSize().y - 3) / text.getFontSizeSpacing()) - 1) {
-		text.setBottomLine(text.getBottomLine() + 1);
-	}else {
-		posY++;
-	}	
-	
-	std::string insertStr = text.getLine(cursorLineNr).substr(strPos, text.getLine(cursorLineNr).length());
-	std::string remainingStr = text.getLine(cursorLineNr).substr(0, strPos);
-	cursorLineNr++;
-	text.insertLines(cursorLineNr, std::string(tabNr, '	') + insertStr);
-	text.setText(cursorLineNr-1, remainingStr);
-	posX = editor.getGreyBlockSize() + tabNr * text.getTabWidth();
-	text.loadTextWidthsBounds(cursorLineNr);
+	setPosYBottomLine(editor, text);
+
+	createNewLineSetNewLineParameters(editor, text, strPos, getTabsForNewLine(text, strPos));
 
 	return true;
 }
