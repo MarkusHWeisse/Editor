@@ -97,20 +97,38 @@ struct cursorPosition {
 	int lineNr;
 	int posX;
 	int posY;
+
+	cursorPosition() {
+
+	}
+
+	cursorPosition(int lineNr, int posX, int posY) {
+		this->lineNr = lineNr;
+		this->posX = posX;
+		this->posY = posY;
+	}
 };
 
 class MarkedText {
 	cursorPosition cp1;
 	cursorPosition cp2;
+	bool isActive;
+	sf::RectangleShape rs;
 
 public:
+	MarkedText() {
+
+	}
+
 	MarkedText(cursorPosition cp1, cursorPosition cp2) {
 		this->cp1 = cp1;
 		this->cp2 = cp2;
+		isActive = true;
 	}
 
 	std::string getString(Cursor &cursor, Text &text);
 	void setString(std::string stringToInsert);
+	void drawMarkedText(Text &text, sf::RenderWindow &window);
 
 	void setCursorPositionOne(cursorPosition cp1) {
 		this->cp1 = cp1;
@@ -118,6 +136,14 @@ public:
 
 	void setCursorPositionTwo(cursorPosition cp2) {
 		this->cp2 = cp2;
+	}
+
+	void setActive() {
+		isActive = true;
+	}
+
+	void unsetActive() {
+		isActive = false;
 	}
 };
 
@@ -301,14 +327,20 @@ private:
 	int cursorLineNr;
 	int cursorBlink;
 	int cursorShow;
-	bool markingText;
+	int posXAtClick;
+	int lineNrAtClick;
+	int posYAtClick;
 	sf::RectangleShape cursorDraw;
 	sf::RectangleShape cursorBackground;
+	MarkedText MT;
 
 public:
 
 	Cursor() {
-		this->markingText = false;
+		this->posXAtClick = -1;
+		this->lineNrAtClick = -1;
+		this->posYAtClick = -1;
+		MT.unsetActive();
 	}
 
 	void loadEvents(Editor &editor, sf::Event &event, Text &text);
@@ -342,8 +374,21 @@ public:
 	int getPosXToCharNr(Editor &editor, Text &text, int linePosX, int lineNr);
 	void cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX);
 
-	void releaseCursorMouse() {
-		markingText = false;
+	void drawDefaultMarkedText(Text &text, sf::RenderWindow &window) {
+		MT.drawMarkedText(text, window);
+	}
+
+	//When posXAtClick is set at -1 all the conditions know that posXAtClick does not have a meaningful value.
+	void enableSetPosXAtClick() {
+		this->posXAtClick = -1;
+		this->lineNrAtClick = -1;
+		this->posYAtClick = -1;
+	}
+
+	void setPosXAtClick() {
+		posXAtClick = posX;
+		lineNrAtClick = cursorLineNr;
+		posYAtClick = posY;
 	}
 
 	int getPosY() {
@@ -499,6 +544,16 @@ public:
 	}
 };
 
+void MarkedText::drawMarkedText(Text &text, sf::RenderWindow &window) {
+	if(isActive) {
+		rs.setFillColor(sf::Color::Red);
+		rs.setPosition(sf::Vector2f(cp1.posX, cp1.posY * text.getFontSizeSpacing() + 3));
+		rs.setSize(sf::Vector2f(abs(cp1.posX - cp2.posX), text.getFontSizeSpacing()));
+
+		window.draw(rs);
+	}
+}
+
 std::string MarkedText::getString(Cursor &cursor, Text &text) {
 	std::string returnstr;
 
@@ -506,7 +561,6 @@ std::string MarkedText::getString(Cursor &cursor, Text &text) {
 	for(int i = cp1.lineNr+1;i<=cp2.lineNr;++i) {
 		if(i > cp1.lineNr && i < cp2.lineNr) {
 			returnstr += text.getLine(i);
-		}else {
 		}
 	}
 
@@ -669,6 +723,11 @@ void Cursor::setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event
 	setMousePosYToLine(text, mcords);
 
 	posX = setMousePosXToCursorX(editor, text, mcords, cursorLineNr);
+
+	if(posXAtClick == -1) {
+		MT.unsetActive();
+		setPosXAtClick();
+	}
 }
 
 bool Cursor::checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int screenPosY, int screenWidth, int screenHeight) {
@@ -676,16 +735,17 @@ bool Cursor::checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int 
 }
 
 void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-
+	if(lineNrAtClick - cursorLineNr != 0 || getPosXToCharNr(editor, text, posX, cursorLineNr) - getPosXToCharNr(editor, text, posXAtClick, lineNrAtClick) != 0) {
+		std::cout << "You are marking Text" << std::endl;
+		MarkedText newMT(cursorPosition(lineNrAtClick, posXAtClick, posYAtClick), cursorPosition(cursorLineNr, posX, posY));
+		MT = newMT;
+	}
 }
 
 void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	if(!markingText) {
-		setMousePosToCursorPos(editor, text, event, mcords);
-		showCursor();
-	}else {
-		cursorMouseMarking(editor, text, event, mcords);
-	}	
+	setMousePosToCursorPos(editor, text, event, mcords);
+	showCursor();
+	cursorMouseMarking(editor, text, event, mcords);
 }
 
 void Cursor::cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
@@ -1102,6 +1162,7 @@ void Editor::loadTotalEvents() {
 void Editor::loadAllDraws() {
 	loadDraw();
 	cursor.loadDraw(*this, text, window);
+	cursor.drawDefaultMarkedText(text, window);
 	text.loadDraw(window, *this);
 	slider.loadDraw(*this, window);
 }
@@ -1146,7 +1207,7 @@ void Editor::loadAllEvents(sf::Event &event) {
 
 	if (event.type == sf::Event::MouseButtonReleased) {
 		slider.escapeEvent();
-		cursor.releaseCursorMouse();
+		cursor.enableSetPosXAtClick();
 	}
 
 	if(event.type == sf::Event::KeyPressed) {
