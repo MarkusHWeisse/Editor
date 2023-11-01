@@ -194,7 +194,7 @@ public:
 	void loadEvents(Editor &editor, Cursor &cursor, sf::Event &event);
 	void loadDraw(sf::RenderWindow &window, Editor &editor);
 	void countChars(void* outVal, Editor &editor, std::string s1, Cursor &cursor, void func(int* outVal2, int* igive, int* sgive));
-	int getSize(int lineNr);
+	int getSize(int lineNr, int charNr);
 	//void countCharsTab(int* i, int* size, int* i2);
 
 	int getFontSize() {
@@ -316,6 +316,8 @@ public:
 	void setNormalBackspace(Editor &editor, Text &text, int cursorCharNr);
 	void setDeleteLineBackspace(Editor &editor, Text &text);
 	cursorPosition cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY);
+	int getPosXToCharNr(Editor &editor, Text &text, int linePosX, int lineNr);
+	void cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX);
 
 	void releaseCursorMouse() {
 		markingText = false;
@@ -793,7 +795,7 @@ void Cursor::setDeleteLineBackspace(Editor &editor, Text &text) {
 	text.deleteLine(cursorLineNr);
 	cursorLineNr--;
 	text.loadTextWidthsBounds(cursorLineNr);
-	posX = editor.getGreyBlockSize() + text.getSize(cursorLineNr);
+	posX = editor.getGreyBlockSize() + text.getSize(cursorLineNr, -1);
 	text.addText(cursorLineNr, deletedLine);
 	text.loadTextWidthsBounds(cursorLineNr);
 	posY--;
@@ -862,11 +864,64 @@ bool Cursor::cursorEnter(Editor &editor, Text &text) {
 	return true;
 }
 
+int Cursor::getPosXToCharNr(Editor &editor, Text &text, int linePosX, int lineNr) {
+	int width = 0;
+	for(int i = 0;i<text.getLine(lineNr).size();++i) {
+		if(width == linePosX - editor.getGreyBlockSize()) {
+			return i;
+		}
+		
+		if(text.getLine(lineNr).at(i) == '	') {
+			width += text.getTabWidth();
+		}else {
+			width += text.getCharWidth();
+		}
+	}
+
+	return -1;
+}
+
+void Cursor::cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX) {
+	int j = getPosXToCharNr(editor, text, linePosX, lineNr);
+
+	if(j == -1) {
+		textToInsert = text.getLine(lineNr) + textToInsert; 
+	}else {
+		std::string first = text.getLine(lineNr).substr(0, j);
+		std::string second = text.getLine(lineNr).substr(j, text.getLine(lineNr).size() - j);
+		textToInsert = first + textToInsert + second;
+	}
+
+	text.setText(lineNr, textToInsert);
+
+	std::cout << textToInsert << std::endl;
+
+	for(int i = 0;i<textToInsert.size();++i) {
+		if(textToInsert.at(i) == '\n' || textToInsert.at(i) == '\r') {
+			/*textToInsert.erase(std::remove(textToInsert.begin(), textToInsert.begin() + i+1, '\n'), textToInsert.begin() + i+1);
+			textToInsert.erase(std::remove(textToInsert.begin(), textToInsert.begin() + i+1, '\r'), textToInsert.begin() + i+1);*/
+			createNewLineSetNewLineParameters(editor, text, lineNr, i, 0);
+			textToInsert = text.getLine(lineNr);
+		}
+	}
+
+	editor.setTitleNotSaved();
+}
+
 cursorPosition Cursor::cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY) {
 	cursorPosition returnCP;
 	returnCP.lineNr = lineNr;
 	returnCP.posX = linePosX;
 	returnCP.posY = linePosY;
+
+	if(textToInsert.find('\n', 0) == std::string::npos) {
+		text.setText(lineNr, text.getLine(lineNr) + textToInsert);
+		return returnCP;
+	}
+
+	cursorInsertTextMakeNewLine(editor, text, textToInsert, lineNr, linePosX);
+
+	return returnCP;
 }
 
 void Cursor::loadEvents(Editor &editor, sf::Event &event, Text &text) {
@@ -1130,6 +1185,8 @@ void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
 				cursor.setCursorLineNr(cp.lineNr);
 				cursor.setPosX(cp.posX);
 				cursor.setPosY(cp.posY);
+				offCTRL();
+				text.denieInput();
 			}
 			break;
 		case sf::Keyboard::LControl:
@@ -1208,9 +1265,9 @@ void Text::countChars(void* outVal, Editor &editor, std::string s1, Cursor &curs
 		
 }
 
-int Text::getSize(int lineNr) {
+int Text::getSize(int lineNr, int charNr) {
 	int j = 0;
-	for(int i = 0;i < lines.at(lineNr).size();++i) {
+	for(int i = 0;i < lines.at(lineNr).size() && (charNr != -1 ? i < charNr : true);++i) {
 		if(lines.at(lineNr).at(i) == '	') {
 			j += getTabWidth();
 		}else {
