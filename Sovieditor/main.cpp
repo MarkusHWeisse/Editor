@@ -74,6 +74,13 @@ std::string fileDialogWinApi() {
     return s1;
 }
 
+class MarkedText;
+class Syntax;
+class Slider;
+class Cursor;
+class Editor;
+class Text;
+
 struct string_to_display {
 	std::string str;
 	bool highlight;
@@ -92,11 +99,27 @@ struct cursorPosition {
 	int posY;
 };
 
-class Syntax;
-class Slider;
-class Cursor;
-class Editor;
-class Text;
+class MarkedText {
+	cursorPosition cp1;
+	cursorPosition cp2;
+
+public:
+	MarkedText(cursorPosition cp1, cursorPosition cp2) {
+		this->cp1 = cp1;
+		this->cp2 = cp2;
+	}
+
+	std::string getString(Cursor &cursor, Text &text);
+	void setString(std::string stringToInsert);
+
+	void setCursorPositionOne(cursorPosition cp1) {
+		this->cp1 = cp1;
+	}
+
+	void setCursorPositionTwo(cursorPosition cp2) {
+		this->cp2 = cp2;
+	}
+};
 
 class Slider {
 private:
@@ -475,6 +498,20 @@ public:
 		window.setTitle(wTitle);
 	}
 };
+
+std::string MarkedText::getString(Cursor &cursor, Text &text) {
+	std::string returnstr;
+
+	returnstr += text.getLine(cp1.lineNr).substr(0, 1);
+	for(int i = cp1.lineNr+1;i<=cp2.lineNr;++i) {
+		if(i > cp1.lineNr && i < cp2.lineNr) {
+			returnstr += text.getLine(i);
+		}else {
+		}
+	}
+
+	return returnstr;
+}
 
 void Slider::setChangeYToLine(Cursor &cursor, Text &text, sf::RenderWindow &window) {
 	int maxLines = (int)((window.getSize().y - 3) / text.getFontSizeSpacing());
@@ -897,9 +934,11 @@ void Cursor::cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string
 	std::cout << textToInsert << std::endl;
 
 	for(int i = 0;i<textToInsert.size();++i) {
-		if(textToInsert.at(i) == '\n' || textToInsert.at(i) == '\r') {
-			/*textToInsert.erase(std::remove(textToInsert.begin(), textToInsert.begin() + i+1, '\n'), textToInsert.begin() + i+1);
-			textToInsert.erase(std::remove(textToInsert.begin(), textToInsert.begin() + i+1, '\r'), textToInsert.begin() + i+1);*/
+		if(textToInsert.at(i) == '\n') {
+			std::string first = textToInsert.substr(0, i);
+			std::string second = textToInsert.substr(i+1, textToInsert.size() - i - 2);
+			textToInsert = first + second;
+			text.setText(lineNr, textToInsert);
 			createNewLineSetNewLineParameters(editor, text, lineNr, i, 0);
 			textToInsert = text.getLine(lineNr);
 		}
