@@ -74,6 +74,7 @@ std::string fileDialogWinApi() {
     return s1;
 }
 
+class EditorMouse;
 class MarkedText;
 class Syntax;
 class Slider;
@@ -106,6 +107,41 @@ struct cursorPosition {
 		this->lineNr = lineNr;
 		this->posX = posX;
 		this->posY = posY;
+	}
+};
+
+class EditorMouse {
+	bool inUse;
+	sf::Mouse m;
+	sf::Vector2i mcords;
+
+public:
+	EditorMouse() {
+
+	}
+
+	void loadMouseCoordinates(sf::RenderWindow &window) {
+		mcords = m.getPosition(window);
+	}
+
+	int getPosX() {
+		return mcords.x;
+	}
+
+	int getPosY() {
+		return mcords.y;
+	}
+
+	sf::Vector2i& getMouseCords() {
+		return mcords;
+	}
+
+	void setInUse(bool t) {
+		inUse = t;
+	}
+
+	bool getInUse() {
+		return inUse;
 	}
 };
 
@@ -158,6 +194,7 @@ private:
 	int sizeY;
 	int mPosBef;
 	int changeYClick;
+	int sliderWidth;
 	sf::RectangleShape sliderRect;
 	sf::CircleShape circle;
 
@@ -175,6 +212,7 @@ public:
 		this->mPosBef = 0;
 		this->changeY = 0;
 		this->allowUpdate = true;
+		this->sliderWidth = 7;
 	}
 
 	void loadEvents(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords);
@@ -185,6 +223,22 @@ public:
 	void sliderClicked(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords);
 	void setChangeYOutOfBounds(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords);
 	void setChangeYInBounds(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords);
+
+	void setInUse(bool t) {
+		inUse = t;
+	}
+
+	bool getInUse() {
+		return inUse;
+	}
+
+	void setSliderWidth(int x) {
+		this->sliderWidth = x;
+	}
+
+	int getSliderWidth() {
+		return this->sliderWidth + 10;
+	}
 
 	void setCPosY(int posY) {
 		this->changeY = posY;
@@ -435,11 +489,11 @@ private:
 	int GreyBlockSize;
 	bool setCTRL;
 	bool setAlt;
+	int leftIndent;
 	std::string path;
 	std::string wTitle;
 	bool mouseInRange;
-	sf::Mouse m;
-	sf::Vector2i mcords;
+	EditorMouse mouse;
 
 public:
 	Editor() {
@@ -472,6 +526,26 @@ public:
 	void checkMouse();
 	void mScrolled(sf::Event &event);
 	void loadTotalEvents();
+
+	void setMouseInUse() {
+		mouse.setInUse(true);
+	}
+
+	void unsetMouseInUse() {
+		mouse.setInUse(false);
+	}
+
+	void loadMouse(EditorMouse &m) {
+		this->mouse = m;
+	}
+
+	bool getSliderInUse() {
+		return slider.getInUse();
+	}
+
+	int getLeftIndent() {
+		return slider.getSliderWidth();
+	}
 
 	bool getMouseInRange() {
 		return mouseInRange;
@@ -613,13 +687,14 @@ void Slider::sliderClicked(Editor &editor, Cursor &cursor, Text &text, sf::Event
 		window.setMouseCursor(c);	
 	if (sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && !inUse) {
 		inUse = true;
+		editor.setMouseInUse();
 		mPosBef = mcords.y;
 		changeYClick = changeY;
 	}
 }
 
 void Slider::loadEvents(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords) {
-	if(!inUse && mcords.x >= window.getSize().x-7 && mcords.y >= posY+changeY && mcords.x <= window.getSize().x-2 && mcords.y <= posY+changeY+sizeY) {
+	if(!inUse && mcords.x >= window.getSize().x-sliderWidth && mcords.y >= posY+changeY && mcords.x <= window.getSize().x-2 && mcords.y <= posY+changeY+sizeY) {
 		sliderClicked(editor, cursor, text, event, window, mcords);
 	}
 	
@@ -655,19 +730,19 @@ void Slider::loadDraw(Editor &editor, sf::RenderWindow &window) {
 	}
 
 	circle.setRadius(2.5);
-	circle.setPosition(sf::Vector2f(window.getSize().x - 7, posY+changeY));
+	circle.setPosition(sf::Vector2f(window.getSize().x - sliderWidth, posY+changeY));
 	circle.setFillColor(c);
 
 	window.draw(circle);
 
 	circle.setRadius(2.5);
-	circle.setPosition(sf::Vector2f(window.getSize().x - 7, posY+changeY+sizeY-5));
+	circle.setPosition(sf::Vector2f(window.getSize().x - sliderWidth, posY+changeY+sizeY-5));
 	circle.setFillColor(c);
 
 	window.draw(circle);
 
 	sliderRect.setFillColor(c);
-	sliderRect.setPosition(sf::Vector2f(window.getSize().x - 7, posY+changeY+2.5));
+	sliderRect.setPosition(sf::Vector2f(window.getSize().x - sliderWidth, posY+changeY+2.5));
 	sliderRect.setSize(sf::Vector2f(5, sizeY-5));
 
 	window.draw(sliderRect);
@@ -749,8 +824,9 @@ void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &
 }
 
 void Cursor::cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, 0, editor.wGetSize().x, editor.wGetSize().y)) {
+	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, 0, editor.wGetSize().x - editor.getLeftIndent(), editor.wGetSize().y)) {
 		cursorMouseEventRecognition(editor, text, event, mcords);
+		std::cout << "recognizing" << std::endl;
 	}
 }
 
@@ -1090,16 +1166,16 @@ void Editor::loadVars() { //TODO: One String for Title
 
 void Editor::checkMouse() {
 	mouseInRange = false;
-	mcords = m.getPosition(window);
+	mouse.loadMouseCoordinates(window);
 
 	//std::cout << "Mouse X: " << mcords.x << "; Cursor X: " << cursor.getPosX() << "; Mouse Y: " << mcords.y << "; Cursor Y: " << cursor.getPosY() << std::endl;
 	
-	if(mcords.x >= GreyBlockSize && mcords.y >= 0 && mcords.x <= window.getSize().x - GreyBlockSize && mcords.y <= window.getSize().y) {
+	if(mouse.getPosX() >= GreyBlockSize && mouse.getPosY() >= 0 && mouse.getPosX() <= window.getSize().x - GreyBlockSize && mouse.getPosY() <= window.getSize().y) {
 		sf::Cursor c;
 		if(c.loadFromSystem(sf::Cursor::Text))
 			window.setMouseCursor(c);
 		mouseInRange = true;
-	}else if(mcords.x >= 0 && mcords.x <= GreyBlockSize || mcords.x >= window.getSize().x - GreyBlockSize && mcords.x <= window.getSize().x) {
+	}else if(mouse.getPosX() >= 0 && mouse.getPosX() <= GreyBlockSize || mouse.getPosX() >= window.getSize().x - GreyBlockSize && mouse.getPosX() <= window.getSize().x) {
 		/*sf::Cursor c;
 		if(c.loadFromSystem(sf::Cursor::SizeAll))
 			window.setMouseCursor(c);*/
@@ -1197,17 +1273,20 @@ void Editor::loadAllEvents(sf::Event &event) {
 	loadEvents(event);
 	//cursor.loadEvents(*this, event, text);
 
-	slider.loadEvents(*this, cursor, text, event, window, mcords);	
+	slider.loadEvents(*this, cursor, text, event, window, mouse.getMouseCords());	
 
 	if(!getCTRL()) {
 		text.loadEvents(*this, cursor, event);
 	}
 
-	cursor.cursorMouseEvent(*this, text, event, mcords);
+	if(!mouse.getInUse()) {
+		cursor.cursorMouseEvent(*this, text, event, mouse.getMouseCords());
+	}
 
 	if (event.type == sf::Event::MouseButtonReleased) {
 		slider.escapeEvent();
 		cursor.enableSetPosXAtClick();
+		mouse.setInUse(false);
 	}
 
 	if(event.type == sf::Event::KeyPressed) {
@@ -1611,6 +1690,7 @@ void Text::loadDraw(sf::RenderWindow &window, Editor &editor) {
 
 int main() {
 	Editor editor;
+	EditorMouse m_t;
 	Text s_t;
 	Cursor s_c;
 	Slider slider_t(editor.wGetSize().x - 10, 0);
@@ -1621,5 +1701,6 @@ int main() {
 	editor.setTextObj(s_t);
 	editor.setCursorObj(s_c);
 	editor.setSliderObj(slider_t);
+	editor.loadMouse(m_t);
 	editor.loadEditor();
 }
