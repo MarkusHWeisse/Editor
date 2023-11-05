@@ -162,9 +162,12 @@ public:
 		isActive = true;
 	}
 
-	std::string getString(Cursor &cursor, Text &text);
-	void setString(std::string stringToInsert);
-	void drawMarkedText(Text &text, sf::RenderWindow &window);
+	std::string getString(Editor &editor, Cursor &cursor, Text &text);
+	cursorPosition setString(Editor &editor, Cursor &cursor, Text &text, std::string stringToInsert);
+	cursorPosition deleteString(Editor &editor, Cursor &cursor, Text &text);
+	void drawMarkedText(Editor &editor, Text &text, sf::RenderWindow &window);
+	void drawRectangle(sf::RenderWindow &window, int posX, int posY, int width, int height);
+	void checkOrientation();
 
 	void setCursorPositionOne(cursorPosition cp1) {
 		this->cp1 = cp1;
@@ -180,6 +183,10 @@ public:
 
 	void unsetActive() {
 		isActive = false;
+	}
+
+	bool getActive() {
+		return isActive;
 	}
 };
 
@@ -406,6 +413,8 @@ public:
 	bool cursorRight(Editor &editor, Text &text);
 	bool cursorUp(Editor &editor, Text &text);
 	bool cursorDown(Editor &editor, Text &text);
+	bool cursorSimpleBackspace(Editor &editor, Text &text);
+	bool cursorMTBackspace(Editor &editor, Text &text);
 	bool cursorBackspace(Editor &editor, Text &text);
 	bool cursorEnter(Editor &editor, Text &text);
 	bool cursorU(Editor &editor, Text &text);
@@ -427,9 +436,27 @@ public:
 	cursorPosition cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY);
 	int getPosXToCharNr(Editor &editor, Text &text, int linePosX, int lineNr);
 	void cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX);
+	void ctrlV(Editor &editor, Text &text);
+	void simpleCtrlV(Editor &editor, Text &text);
 
-	void drawDefaultMarkedText(Text &text, sf::RenderWindow &window) {
-		MT.drawMarkedText(text, window);
+	bool defaultMTIsActive() {
+		return MT.getActive();
+	}
+
+	std::string getStringFromMarkedText(Editor &editor, Cursor &cursor, Text &text) {
+		return MT.getString(editor, cursor, text);
+	}
+
+	cursorPosition deleteDefaultMTString(Editor &editor, Cursor &cursor, Text &text) {
+		return MT.deleteString(editor, cursor, text);
+	}
+
+	cursorPosition defaultMTSetString(Editor &editor, Cursor &cursor, Text &text, std::string stringToInsert) {
+		return MT.setString(editor, cursor, text, stringToInsert);
+	}
+
+	void drawDefaultMarkedText(Editor &editor, Text &text, sf::RenderWindow &window) {
+		MT.drawMarkedText(editor, text, window);
 	}
 
 	//When posXAtClick is set at -1 all the conditions know that posXAtClick does not have a meaningful value.
@@ -618,27 +645,122 @@ public:
 	}
 };
 
-void MarkedText::drawMarkedText(Text &text, sf::RenderWindow &window) {
-	if(isActive) {
-		rs.setFillColor(sf::Color::Red);
-		rs.setPosition(sf::Vector2f(cp1.posX, cp1.posY * text.getFontSizeSpacing() + 3));
-		rs.setSize(sf::Vector2f(abs(cp1.posX - cp2.posX), text.getFontSizeSpacing()));
+void MarkedText::drawRectangle(sf::RenderWindow &window, int posX, int posY, int width, int height) {
+	rs.setFillColor(sf::Color(150, 150, 150));
+	rs.setPosition(sf::Vector2f(posX, posY));
+	rs.setSize(sf::Vector2f(abs(width), height));
 
-		window.draw(rs);
+	window.draw(rs);
+}
+
+void MarkedText::checkOrientation() {
+	if(cp1.lineNr > cp2.lineNr || (cp1.posX > cp2.posX && cp1.lineNr == cp2.lineNr)) {
+		cursorPosition ret = cp1;
+		cp1 = cp2;
+		cp2 = ret;	
 	}
 }
 
-std::string MarkedText::getString(Cursor &cursor, Text &text) {
-	std::string returnstr;
-
-	returnstr += text.getLine(cp1.lineNr).substr(0, 1);
-	for(int i = cp1.lineNr+1;i<=cp2.lineNr;++i) {
-		if(i > cp1.lineNr && i < cp2.lineNr) {
-			returnstr += text.getLine(i);
-		}
+void MarkedText::drawMarkedText(Editor &editor, Text &text, sf::RenderWindow &window) {
+	if(!isActive) {
+		return;
 	}
 
+	if(cp2.lineNr < text.getBottomLine() - 1) {
+		return;
+	}
+	
+	if(cp1.lineNr == cp2.lineNr) {
+		int MTPosY = ((cp1.lineNr - text.getBottomLine() + 1)) * text.getFontSizeSpacing() + 3;
+		drawRectangle(window, cp1.posX, MTPosY, abs(cp1.posX - cp2.posX), text.getFontSizeSpacing());
+		return;
+	}
+
+	int iLineNr = abs(cp2.lineNr - cp1.lineNr);
+
+	int i = 0;
+	int MTPosY = ((cp1.lineNr - text.getBottomLine() + 1)) * text.getFontSizeSpacing() + 3;
+	drawRectangle(window, cp1.posX, MTPosY, abs((cp1.posX-editor.getGreyBlockSize()) - text.getSize(cp1.lineNr, -1)), text.getFontSizeSpacing());
+	while(i<iLineNr-1) {
+		i++;
+		MTPosY += text.getFontSizeSpacing();
+		drawRectangle(window, editor.getGreyBlockSize(), MTPosY, text.getSize(cp1.lineNr + i, -1), text.getFontSizeSpacing());
+	}
+	MTPosY += text.getFontSizeSpacing();
+	drawRectangle(window, editor.getGreyBlockSize(), MTPosY, cp2.posX - editor.getGreyBlockSize(), text.getFontSizeSpacing());
+}
+
+std::string MarkedText::getString(Editor &editor, Cursor &cursor, Text &text) {
+	if(!isActive) {
+		return "";
+	}
+
+	std::string returnstr;
+
+	if(cp1.lineNr == cp2.lineNr) {
+		int cp1x = cursor.getPosXToCharNr(editor, text, cp1.posX, cp1.lineNr);
+		int cp2x = cursor.getPosXToCharNr(editor, text, cp2.posX, cp1.lineNr);
+
+		if(cp2x == -1) {
+			cp2x = text.getLine(cp1.lineNr).size();
+		}
+
+		returnstr = text.getLine(cp1.lineNr).substr(cp1x, cp2x - cp1x);
+		return returnstr;
+	}
+
+	int iLineNr = abs(cp2.lineNr - cp1.lineNr);
+	int cp1x = cursor.getPosXToCharNr(editor, text, cp1.posX, cp1.lineNr);
+	int cp2x = cursor.getPosXToCharNr(editor, text, cp2.posX, cp2.lineNr);
+	cp1x = (cp1x == -1) ? (text.getLine(cp1.lineNr).size()) : (cp1x);
+	cp2x = (cp2x == -1) ? (text.getLine(cp2.lineNr).size()) : (cp2x);
+	returnstr += text.getLine(cp1.lineNr).substr(cp1x, text.getLine(cp1.lineNr).size() - cp1x);
+	int i = 0;
+	while(i<iLineNr-1) {
+		i++;
+		returnstr += "\n" + text.getLine(cp1.lineNr + i);
+	}
+	returnstr += "\n";
+	returnstr += text.getLine(cp2.lineNr).substr(0, cp2x + 1);
+
 	return returnstr;
+}
+
+cursorPosition MarkedText::deleteString(Editor &editor, Cursor &cursor, Text &text) {
+	cursorPosition retcp;
+
+	if(!isActive) {
+		return retcp;
+	}
+
+	if(cp1.lineNr == cp2.lineNr) {
+		int cp1x = cursor.getPosXToCharNr(editor, text, cp1.posX, cp1.lineNr);
+		int cp2x = cursor.getPosXToCharNr(editor, text, cp2.posX, cp1.lineNr);
+		std::string text1 = text.getLine(cp1.lineNr).substr(0, cp1x);
+		std::string text2 = (cp2x != -2) ? text.getLine(cp1.lineNr).substr(cp2x, text.getLine(cp1.lineNr).size()-cp2x) : "";
+		text.setText(cp1.lineNr, text1 + text2);
+
+		retcp.lineNr = cp1.lineNr;
+		retcp.posX = cp1.posX;
+		retcp.posY = cp1.posY;
+		return retcp;
+	}
+
+	int cp1x = cursor.getPosXToCharNr(editor, text, cp1.posX, cp1.lineNr);
+	int cp2x = cursor.getPosXToCharNr(editor, text, cp2.posX, cp2.lineNr);
+	std::string text1 = text.getLine(cp1.lineNr).substr(0, cp1x);
+	std::string text2 = (cp2x != -2) ? text.getLine(cp2.lineNr).substr(cp2x, text.getLine(cp2.lineNr).size()-cp2x) : "";
+	text.setText(cp1.lineNr, text1 + text2);
+
+	retcp.lineNr = cp1.lineNr;
+	retcp.posX = cp1.posX;
+	retcp.posY = cp1.posY;
+
+	for(int i = cp1.lineNr+1;i<=cp2.lineNr;++i) {
+		text.deleteLine(cp1.lineNr+1);
+	}
+
+	return retcp;
 }
 
 void Slider::setChangeYToLine(Cursor &cursor, Text &text, sf::RenderWindow &window) {
@@ -814,6 +936,7 @@ void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf
 		std::cout << "You are marking Text" << std::endl;
 		MarkedText newMT(cursorPosition(lineNrAtClick, posXAtClick, posYAtClick), cursorPosition(cursorLineNr, posX, posY));
 		MT = newMT;
+		MT.checkOrientation();
 	}
 }
 
@@ -974,7 +1097,7 @@ void Cursor::setDeleteLineBackspace(Editor &editor, Text &text) {
 	posY--;
 }
 
-bool Cursor::cursorBackspace(Editor &editor, Text &text) {
+bool Cursor::cursorSimpleBackspace(Editor &editor, Text &text) {
 	if(editor.getCTRL()) {
 		return false;
 	}
@@ -988,6 +1111,30 @@ bool Cursor::cursorBackspace(Editor &editor, Text &text) {
 	}
 	return true;
 }
+
+bool Cursor::cursorMTBackspace(Editor &editor, Text &text) {
+	cursorPosition cp = deleteDefaultMTString(editor, *this, text);
+	setPosX(cp.posX);
+	setPosY(cp.posY);
+	if(text.getBottomLine() > cp.lineNr+1) {
+		text.setBottomLine(cp.lineNr+1);
+	}	
+	setCursorLineNr(cp.lineNr);
+	MT.unsetActive();
+	return true;
+}
+
+bool Cursor::cursorBackspace(Editor &editor, Text &text) {
+	if(defaultMTIsActive()) {
+		cursorMTBackspace(editor, text);
+		text.denieInput();
+		return true;
+	}else if(cursorSimpleBackspace(editor, text)) {
+		text.denieInput();
+		return true;
+	}	
+	return false;
+} 
 
 int Cursor::getTabsForNewLine(Text &text, int tillPos) {
 	int tabNr = 0;
@@ -1051,13 +1198,17 @@ int Cursor::getPosXToCharNr(Editor &editor, Text &text, int linePosX, int lineNr
 		}
 	}
 
+	if(linePosX - editor.getGreyBlockSize() == text.getSize(lineNr, text.getLine(lineNr).size())) {
+		//return text.getLine(lineNr).size()-1;
+		return -2;
+	}
 	return -1;
 }
 
 void Cursor::cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX) {
 	int j = getPosXToCharNr(editor, text, linePosX, lineNr);
 
-	if(j == -1) {
+	if(j == -1 || j == -2) {
 		textToInsert = text.getLine(lineNr) + textToInsert; 
 	}else {
 		std::string first = text.getLine(lineNr).substr(0, j);
@@ -1070,12 +1221,15 @@ void Cursor::cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string
 	std::cout << textToInsert << std::endl;
 
 	for(int i = 0;i<textToInsert.size();++i) {
-		if(textToInsert.at(i) == '\n') {
+		char c = textToInsert.at(i);
+		if(c == '\r') {
 			std::string first = textToInsert.substr(0, i);
-			std::string second = textToInsert.substr(i+1, textToInsert.size() - i - 2);
+			std::string second = textToInsert.substr(i+2, textToInsert.size() - i - 2);
 			textToInsert = first + second;
-			text.setText(lineNr, textToInsert);
-			createNewLineSetNewLineParameters(editor, text, lineNr, i, 0);
+			text.setText(lineNr, first);
+			lineNr++;
+			text.insertLines(lineNr+1, second);
+			//createNewLineSetNewLineParameters(editor, text, lineNr, i, 0);
 			textToInsert = text.getLine(lineNr);
 		}
 	}
@@ -1123,6 +1277,33 @@ void Cursor::loadDraw(Editor &editor, Text &text, sf::RenderWindow &window) { //
 		window.draw(cursorDraw);
 		cursorShow--;
 		cursorBlink = 40;
+	}
+}
+
+void Cursor::simpleCtrlV(Editor &editor, Text &text) {
+	cursorPosition cp;
+	cp = cursorInsertText(editor, text, sf::Clipboard::getString().toAnsiString(), getCursorLineNr(), getPosX(), getPosY());
+	setCursorLineNr(cp.lineNr);
+	setPosX(cp.posX);
+	setPosY(cp.posY);
+	editor.offCTRL();
+	text.denieInput();
+}
+
+void Cursor::ctrlV(Editor &editor, Text &text) {
+	if(MT.getActive()) {
+		cursorPosition cp = MT.deleteString(editor, *this, text);
+		setPosX(cp.posX);
+		setPosY(cp.posY);
+		if(text.getBottomLine() > cp.lineNr+1) {
+			text.setBottomLine(cp.lineNr+1);
+		}	
+		setCursorLineNr(cp.lineNr);
+		MT.unsetActive();
+		cursorInsertText(editor, text, sf::Clipboard::getString(), cursorLineNr, posX, posY);
+		text.denieInput();
+	}else if(editor.getCTRL()) {
+		simpleCtrlV(editor, text);
 	}
 }
 
@@ -1238,7 +1419,7 @@ void Editor::loadTotalEvents() {
 void Editor::loadAllDraws() {
 	loadDraw();
 	cursor.loadDraw(*this, text, window);
-	cursor.drawDefaultMarkedText(text, window);
+	cursor.drawDefaultMarkedText(*this, text, window);
 	text.loadDraw(window, *this);
 	slider.loadDraw(*this, window);
 }
@@ -1268,6 +1449,10 @@ void Editor::dynamicGBS(Cursor &cursor, Text &text) {
 }
 
 void Editor::loadAllEvents(sf::Event &event) {
+	if(!window.hasFocus()) {
+		return;
+	}
+
 	dynamicGBS(cursor, text);
 
 	loadEvents(event);
@@ -1306,9 +1491,7 @@ void Editor::loadAllEvents(sf::Event &event) {
 void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
 	switch(event.key.code) {
 		case sf::Keyboard::Backspace:
-			if(cursor.cursorBackspace(*this, text)) {
-				text.denieInput();
-			}	
+			cursor.cursorBackspace(*this, text);
 			break;
 		case sf::Keyboard::Left:
 			if(cursor.cursorLeft(*this, text)) {
@@ -1358,15 +1541,12 @@ void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
 			}
 			break;	
 		case sf::Keyboard::V:
+			cursor.ctrlV(*this, text);
+			break;
+		case  sf::Keyboard::C:
 			if(getCTRL()) {
-				cursorPosition cp;
-				cp = cursor.cursorInsertText(*this, text, sf::Clipboard::getString().toAnsiString(), cursor.getCursorLineNr(), cursor.getPosX(), cursor.getPosY());
-				cursor.setCursorLineNr(cp.lineNr);
-				cursor.setPosX(cp.posX);
-				cursor.setPosY(cp.posY);
-				offCTRL();
-				text.denieInput();
-			}
+				sf::Clipboard::setString(cursor.getStringFromMarkedText(*this, cursor, text));
+			}	
 			break;
 		case sf::Keyboard::LControl:
 			onCTRL();
