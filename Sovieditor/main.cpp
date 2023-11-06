@@ -1327,14 +1327,33 @@ void Editor::openFile(Text &text, Cursor &cursor) {
 	text.loadText();
 	cursor.loadVars(*this);
 	path = file_path;
+	std::ofstream wfile;
+	wfile.open("se_data_current.sedatac", std::ofstream::out | std::ofstream::trunc);
+	wfile << file_path;
+	wfile.close();
 	//cursor.loadCursor(*this, window, text);
 }
 
 //This function initializes cursor vars two times.
 void Editor::loadEditor() {
-	std::string file_path = fileDialogWinApi();
+	std::ifstream file("se_data_current.sedatac");
+
+	if(!file.is_open()) {
+		std::ofstream nfile("se_data_current.sedatac");
+		nfile.close();
+	}
+
+	std::string file_path;
+	if(!getline(file, file_path)) {
+		std::ofstream wfile("se_data_current.sedatac");
+		file_path = fileDialogWinApi();
+		wfile << file_path;
+		wfile.close();
+	}
 	text.loadFile(file_path);
 	setFilePath(file_path);
+
+	file.close();
 
 	loadVars();
 
@@ -1468,7 +1487,7 @@ void Editor::loadAllEvents(sf::Event &event) {
 		cursor.cursorMouseEvent(*this, text, event, mouse.getMouseCords());
 	}
 
-	if (event.type == sf::Event::MouseButtonReleased) {
+	if(event.type == sf::Event::MouseButtonReleased) {
 		slider.escapeEvent();
 		cursor.enableSetPosXAtClick();
 		mouse.setInUse(false);
@@ -1528,7 +1547,9 @@ void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
 			break;
 		case sf::Keyboard::O:
 			if(getCTRL()) {
-				loadEditor();
+				openFile(text, cursor);
+				loadVars();
+				loadLoop();
 				offCTRL();
 				text.denieInput();
 			}	
