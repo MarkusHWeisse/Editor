@@ -285,6 +285,7 @@ private:
 	sf::Font font;
 	std::vector<std::string> keywords;
 	std::vector<std::string> keywordsSpecial;
+	std::vector<sf::Text> textDrawVector;
 
 public:
 	Text() {
@@ -305,6 +306,7 @@ public:
 	void loadDraw(sf::RenderWindow &window, Editor &editor);
 	void countChars(void* outVal, Editor &editor, std::string s1, Cursor &cursor, void func(int* outVal2, int* igive, int* sgive));
 	int getSize(int lineNr, int charNr);
+	void drawText(sf::RenderWindow &window);
 	//void countCharsTab(int* i, int* size, int* i2);
 
 	int getFontSize() {
@@ -526,6 +528,10 @@ public:
 	Editor() {
 		window.create(sf::VideoMode(1200, 900), "Sovieditor");
 		window.setFramerateLimit(60);
+
+		HWND win = window.getSystemHandle();
+		SetWindowLongPtr(win, GWL_EXSTYLE, GetWindowLongPtr(win, GWL_EXSTYLE) | WS_EX_LAYERED);
+		SetLayeredWindowAttributes(window.getSystemHandle(), 0x00FFFFFF, 228, LWA_ALPHA);
 
 		GreyBlockSize = 30;
 		background.setSize(sf::Vector2f(window.getSize().x, window.getSize().y));
@@ -766,7 +772,7 @@ cursorPosition MarkedText::deleteString(Editor &editor, Cursor &cursor, Text &te
 void Slider::setChangeYToLine(Cursor &cursor, Text &text, sf::RenderWindow &window) {
 	int maxLines = (int)((window.getSize().y - 3) / text.getFontSizeSpacing());
 	int zeile = (int)((float)changeY * (float)((float)(text.getLineSize() - maxLines) / (float)(window.getSize().y - posY - sizeY)));
-	cursor.setCursorLineNr(cursor.getCursorLineNr() + zeile + 1 - text.getBottomLine());
+	//cursor.setCursorLineNr(cursor.getCursorLineNr() + zeile + 1 - text.getBottomLine());
 	text.setBottomLine(zeile + 1);
 	allowUpdate = false;
 }
@@ -775,13 +781,10 @@ void Slider::setChangeYOutOfBounds(Editor &editor, Cursor &cursor, Text &text, s
 	if(mcords.x >= editor.getGreyBlockSize() && mcords.x <= window.getSize().x)	{
 		if(mcords.y < posY) {
 			changeY = 0;
-			setChangeYToLine(cursor, text, window);
-			return;
 		}else if(mcords.y > window.getSize().y) {
 			changeY = window.getSize().y - sizeY; 
-			setChangeYToLine(cursor, text, window);
-			return;
 		}
+		setChangeYToLine(cursor, text, window);
 	}
 }
 
@@ -801,6 +804,8 @@ void Slider::sliderInUse(Editor &editor, Cursor &cursor, Text &text, sf::Event &
 	setChangeYOutOfBounds(editor, cursor, text, event, window, mcords);
 
 	setChangeYInBounds(editor, cursor, text, event, window, mcords);
+
+	cursor.setPosY(cursor.getCursorLineNr()+1 - text.getBottomLine());
 }
 
 void Slider::sliderClicked(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords) {
@@ -941,15 +946,24 @@ void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf
 }
 
 void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	setMousePosToCursorPos(editor, text, event, mcords);
-	showCursor();
-	cursorMouseMarking(editor, text, event, mcords);
+	bool doit = true;
+	if(mcords.y <= 0 && mcords.y >= -20) {
+		doit = cursorUp(editor, text);
+	}else if(mcords.y >= editor.wGetSize().y && mcords.y <= editor.wGetSize().y+20) {
+		doit = cursorDown(editor, text);
+	}
+
+	if(doit) {
+		setMousePosToCursorPos(editor, text, event, mcords);
+		showCursor();
+		cursorMouseMarking(editor, text, event, mcords); 
+	}
 }
 
 void Cursor::cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, 0, editor.wGetSize().x - editor.getLeftIndent(), editor.wGetSize().y)) {
+	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, -20, editor.wGetSize().x - editor.getLeftIndent(), editor.wGetSize().y+20)) {
 		cursorMouseEventRecognition(editor, text, event, mcords);
-		std::cout << "recognizing" << std::endl;
+		//std::cout << "recognizing" << std::endl;
 	}
 }
 
@@ -960,7 +974,7 @@ void Cursor::setCursorRects(Editor &editor, Text &text) {
 
 	cursorDraw.setSize(sf::Vector2f(1, text.getFontSizeSpacing()));
 	cursorDraw.setPosition(posX, (posY * text.getFontSizeSpacing()) + 3);
-	cursorDraw.setFillColor(sf::Color::Black);
+	cursorDraw.setFillColor(sf::Color::Red);
 }
 
 void Cursor::loadCursor(Editor &editor, Text &text) {
@@ -1036,6 +1050,7 @@ bool Cursor::cursorUp(Editor &editor, Text &text) {
 	cursorLineNr--;
 	if((cursorLineNr) < 0) {
 		cursorLineNr++;
+		return false;
 	}else if((posY-1) < 0) {
 		text.setBottomLine(text.getBottomLine() - 1);
 	}else {
@@ -1070,8 +1085,9 @@ bool Cursor::cursorDown(Editor &editor, Text &text) {
 			posY++;
 		}
 		cursorLineNr++;
+		return true;
 	}
-	return true;
+	return false;
 }
 
 void Cursor::setNormalBackspace(Editor &editor, Text &text, int cursorCharNr) {
@@ -1262,7 +1278,7 @@ void Cursor::loadDraw(Editor &editor, Text &text, sf::RenderWindow &window) { //
 
 	cursorDraw.setPosition(posX, (posY * text.getFontSizeSpacing()) + 3);
 
-	window.draw(cursorBackground);
+	//window.draw(cursorBackground);
 	
 	if(cursorBlink <= 40 && cursorShow == 0) {
 		if(cursorBlink > 0) {
@@ -1401,7 +1417,7 @@ void Editor::loadLoop() {
 }
 
 void Editor::loadDraw() {
-	window.draw(background);
+	//window.draw(background);
 
 	leftNumBlock.setSize(sf::Vector2f(getGreyBlockSize(), window.getSize().y));
 	window.draw(leftNumBlock);
@@ -1413,6 +1429,7 @@ void Editor::mScrolled(sf::Event &event) {
 		int change = (event.mouseWheelScroll.delta > 0) ? (text.getBottomLine() - 1 > 0 ? -1 : 0) : (text.getBottomLine() - 1 >= (text.getLineSize() - maxLines) ? 0 : 1);
 		text.setBottomLine(text.getBottomLine() + change);
 		cursor.setCursorLineNr(cursor.getCursorLineNr() + change);
+		cursor.setPosY(cursor.getPosY() - change);
 	}
 }
 
@@ -1518,6 +1535,7 @@ void Editor::loadSwitchKeyPressedEvents(sf::Event &event) {
 			break;
 		case sf::Keyboard::Right:
 			if(cursor.cursorRight(*this, text)) {
+
 			}	
 			break;
 		case sf::Keyboard::Up:
@@ -1607,6 +1625,12 @@ void Editor::loadSwitchKeyReleasedEvents(sf::Event &event) {
 			break;
 		default:
 			break;
+	}
+}
+
+void Text::drawText(sf::RenderWindow &window) {
+	for(int i = 0;i<textDrawVector.size();++i) {
+		window.draw(textDrawVector.at(i));
 	}
 }
 
@@ -1749,6 +1773,7 @@ void Text::insertText(int cursorLineNr, int cursorCharNr, char insert, bool dele
 }
 
 void Text::loadDraw(sf::RenderWindow &window, Editor &editor) {
+	textDrawVector.clear();
 	int ilinec = ((int)bottomLine < 0) ? 0 : (int)bottomLine-1;
 	for(int i = 0;ilinec+i<lines.size() && ((i+1)*fontSizeSpacing + 3) <= window.getSize().y;i++) {
 
@@ -1885,8 +1910,11 @@ void Text::loadDraw(sf::RenderWindow &window, Editor &editor) {
 	
 		textDraw.setString(std::to_string(i+ilinec+1) /*strDisplay.at(j).str*/);
 		textDraw.setPosition(editor.getGreyBlockSize() - textDraw.getString().getSize() * getCharWidth() - 5, i*fontSizeSpacing+3);
-		window.draw(textDraw);
-	}	
+		textDrawVector.push_back(textDraw);
+	}
+	drawText(window);
+	//window.display();	
+	drawText(window);
 }
 
 int main() {
