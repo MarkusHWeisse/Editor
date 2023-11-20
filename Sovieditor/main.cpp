@@ -385,6 +385,7 @@ public:
 
 class Cursor {
 private:	
+	int textMovingWhileMarkingSet;
 	int posY;
 	int posX;
 	int cursorLineNr;
@@ -393,6 +394,7 @@ private:
 	int posXAtClick;
 	int lineNrAtClick;
 	int posYAtClick;
+	int textMovingWhileMarkingSpeed;
 	sf::RectangleShape cursorDraw;
 	sf::RectangleShape cursorBackground;
 	MarkedText MT;
@@ -403,6 +405,8 @@ public:
 		this->posXAtClick = -1;
 		this->lineNrAtClick = -1;
 		this->posYAtClick = -1;
+		this->textMovingWhileMarkingSpeed = 10;
+		this->textMovingWhileMarkingSet = 0;
 		MT.unsetActive();
 	}
 
@@ -422,10 +426,10 @@ public:
 	bool cursorU(Editor &editor, Text &text);
 	bool cursorD(Editor &editor, Text &text);
 	void cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
-	void cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
-	void cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	void cursorMouseMarking(Editor &editor, Text &text, sf::Vector2i &mcords);
+	void cursorMouseEventRecognition(Editor &editor, Text &text, sf::Vector2i &mcords);
 	bool checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int screenPosY, int screenWidth, int screenHeight);
-	void setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords);
+	void setMousePosToCursorPos(Editor &editor, Text &text, sf::Vector2i &mcords);
 	void setMousePosYToLine(Text &text, sf::Vector2i &mcords);
 	int getMousePosYToLineNr(int mousePosY, int fontSize, int topSpace);
 	int setMousePosXToCursorX(Editor &editor, Text &text, sf::Vector2i &mcords, int lineNr);
@@ -440,6 +444,7 @@ public:
 	void cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string &textToInsert, int &lineNr, int &linePosX);
 	void ctrlV(Editor &editor, Text &text);
 	void simpleCtrlV(Editor &editor, Text &text);
+	void cursorTextMovingWhileMarking(Editor &editor, Text &text, sf::Vector2i &mcords);
 
 	bool defaultMTIsActive() {
 		return MT.getActive();
@@ -546,7 +551,7 @@ public:
 
 	void loadEvents(sf::Event &event);
 	void loadDraw();
-	void loadEditor();
+	void loadEditor(std::string path1);
 	void loadAllEvents(sf::Event &event);
 	void loadSwitchKeyPressedEvents(sf::Event &event);
 	void loadSwitchKeyReleasedEvents(sf::Event &event);
@@ -821,12 +826,14 @@ void Slider::sliderClicked(Editor &editor, Cursor &cursor, Text &text, sf::Event
 }
 
 void Slider::loadEvents(Editor &editor, Cursor &cursor, Text &text, sf::Event &event, sf::RenderWindow &window, sf::Vector2i &mcords) {
-	if(!inUse && mcords.x >= window.getSize().x-sliderWidth && mcords.y >= posY+changeY && mcords.x <= window.getSize().x-2 && mcords.y <= posY+changeY+sizeY) {
-		sliderClicked(editor, cursor, text, event, window, mcords);
-	}
-	
 	if(inUse) {
 		sliderInUse(editor, cursor, text, event, window, mcords);	
+		return;
+	}
+	
+	if(mcords.x >= window.getSize().x-sliderWidth && mcords.y >= posY+changeY && mcords.x <= window.getSize().x-2 && mcords.y <= posY+changeY+sizeY) {
+		sliderClicked(editor, cursor, text, event, window, mcords);
+		return;
 	}
 }
 
@@ -921,7 +928,7 @@ void Cursor::setMousePosYToLine(Text &text, sf::Vector2i &mcords) {
 	cursorLineNr += text.getBottomLine() - 1;
 }
 
-void Cursor::setMousePosToCursorPos(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
+void Cursor::setMousePosToCursorPos(Editor &editor, Text &text, sf::Vector2i &mcords) {
 	setMousePosYToLine(text, mcords);
 
 	posX = setMousePosXToCursorX(editor, text, mcords, cursorLineNr);
@@ -936,7 +943,7 @@ bool Cursor::checkMouseInWindowBounds(sf::Vector2i &mcords, int screenPosX, int 
 	return mcords.x >= screenPosX && mcords.x <= screenWidth && mcords.y >= screenPosY && mcords.y <= screenHeight;
 }
 
-void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
+void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Vector2i &mcords) {
 	if(lineNrAtClick - cursorLineNr != 0 || getPosXToCharNr(editor, text, posX, cursorLineNr) - getPosXToCharNr(editor, text, posXAtClick, lineNrAtClick) != 0) {
 		std::cout << "You are marking Text" << std::endl;
 		MarkedText newMT(cursorPosition(lineNrAtClick, posXAtClick, posYAtClick), cursorPosition(cursorLineNr, posX, posY));
@@ -945,24 +952,41 @@ void Cursor::cursorMouseMarking(Editor &editor, Text &text, sf::Event &event, sf
 	}
 }
 
-void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
-	bool doit = true;
-	if(mcords.y <= 0 && mcords.y >= -20) {
-		doit = cursorUp(editor, text);
-	}else if(mcords.y >= editor.wGetSize().y && mcords.y <= editor.wGetSize().y+20) {
-		doit = cursorDown(editor, text);
+void Cursor::cursorMouseEventRecognition(Editor &editor, Text &text, sf::Vector2i &mcords) {
+	setMousePosToCursorPos(editor, text, mcords);
+	showCursor();
+	cursorMouseMarking(editor, text, mcords); 
+}
+
+void Cursor::cursorTextMovingWhileMarking(Editor &editor, Text &text, sf::Vector2i &mcords) {
+	if(textMovingWhileMarkingSet == 0 || textMovingWhileMarkingSpeed > 0) {
+		textMovingWhileMarkingSpeed--;
+		return;
 	}
 
-	if(doit) {
-		setMousePosToCursorPos(editor, text, event, mcords);
-		showCursor();
-		cursorMouseMarking(editor, text, event, mcords); 
+	textMovingWhileMarkingSpeed = 10;
+
+	if(textMovingWhileMarkingSet == 1) {
+		if(cursorUp(editor, text))cursorMouseEventRecognition(editor, text, mcords);
+	}else {
+		if(cursorDown(editor, text))cursorMouseEventRecognition(editor, text, mcords);
 	}
 }
 
 void Cursor::cursorMouseEvent(Editor &editor, Text &text, sf::Event &event, sf::Vector2i &mcords) {
 	if(sf::Mouse::isButtonPressed(sf::Mouse::Button::Left) && checkMouseInWindowBounds(mcords, 0, -20, editor.wGetSize().x - editor.getLeftIndent(), editor.wGetSize().y+20)) {
-		cursorMouseEventRecognition(editor, text, event, mcords);
+		if(mcords.y <= 0 && mcords.y >= -20) {
+			textMovingWhileMarkingSet = 1;
+			return;
+		}else if(mcords.y >= editor.wGetSize().y && mcords.y <= editor.wGetSize().y+20) {
+			textMovingWhileMarkingSet = 2;
+			return;
+		}
+
+		textMovingWhileMarkingSet = 0;
+		textMovingWhileMarkingSpeed = 10;
+		
+		cursorMouseEventRecognition(editor, text, mcords);
 		//std::cout << "recognizing" << std::endl;
 	}
 }
@@ -972,9 +996,9 @@ void Cursor::setCursorRects(Editor &editor, Text &text) {
 	cursorBackground.setPosition(editor.getGreyBlockSize(), (posY * text.getFontSizeSpacing()) + 3);
 	cursorBackground.setFillColor(sf::Color(240, 240, 240));
 
-	cursorDraw.setSize(sf::Vector2f(1, text.getFontSizeSpacing()));
+	cursorDraw.setSize(sf::Vector2f(2, text.getFontSizeSpacing()));
 	cursorDraw.setPosition(posX, (posY * text.getFontSizeSpacing()) + 3);
-	cursorDraw.setFillColor(sf::Color::Red);
+	cursorDraw.setFillColor(sf::Color(255, 0, 0));
 }
 
 void Cursor::loadCursor(Editor &editor, Text &text) {
@@ -1256,7 +1280,7 @@ void Cursor::cursorInsertTextMakeNewLine(Editor &editor, Text &text, std::string
 cursorPosition Cursor::cursorInsertText(Editor &editor, Text &text, std::string textToInsert, int lineNr, int linePosX, int linePosY) {
 	cursorPosition returnCP;
 	returnCP.lineNr = lineNr;
-	returnCP.posX = linePosX;
+	returnCP.posX = linePosX + textToInsert.size() * text.getCharWidth();
 	returnCP.posY = linePosY;
 
 	if(textToInsert.find('\n', 0) == std::string::npos) {
@@ -1307,20 +1331,25 @@ void Cursor::simpleCtrlV(Editor &editor, Text &text) {
 }
 
 void Cursor::ctrlV(Editor &editor, Text &text) {
-	if(MT.getActive()) {
-		cursorPosition cp = MT.deleteString(editor, *this, text);
-		setPosX(cp.posX);
-		setPosY(cp.posY);
-		if(text.getBottomLine() > cp.lineNr+1) {
-			text.setBottomLine(cp.lineNr+1);
-		}	
-		setCursorLineNr(cp.lineNr);
-		MT.unsetActive();
-		cursorInsertText(editor, text, sf::Clipboard::getString(), cursorLineNr, posX, posY);
-		text.denieInput();
-	}else if(editor.getCTRL()) {
-		simpleCtrlV(editor, text);
+	if(!editor.getCTRL()) {
+		return;
 	}
+
+	if(!MT.getActive()) {
+		simpleCtrlV(editor, text);
+		return;
+	}
+
+	cursorPosition cp = MT.deleteString(editor, *this, text);
+	setPosX(cp.posX);
+	setPosY(cp.posY);
+	if(text.getBottomLine() > cp.lineNr+1) {
+		text.setBottomLine(cp.lineNr+1);
+	}	
+	setCursorLineNr(cp.lineNr);
+	MT.unsetActive();
+	cursorInsertText(editor, text, sf::Clipboard::getString(), cursorLineNr, posX, posY);
+	text.denieInput();
 }
 
 void Editor::writeFile(Text &text) {
@@ -1351,25 +1380,30 @@ void Editor::openFile(Text &text, Cursor &cursor) {
 }
 
 //This function initializes cursor vars two times.
-void Editor::loadEditor() {
-	std::ifstream file("se_data_current.sedatac");
+void Editor::loadEditor(std::string path1) {
+	if(!path1.size() > 0) {
+		std::ifstream file("se_data_current.sedatac");
 
-	if(!file.is_open()) {
-		std::ofstream nfile("se_data_current.sedatac");
-		nfile.close();
+		if(!file.is_open()) {
+			std::ofstream nfile("se_data_current.sedatac");
+			nfile.close();
+		}
+
+		std::string file_path;
+		if(!getline(file, file_path)) {
+			std::ofstream wfile("se_data_current.sedatac");
+			file_path = fileDialogWinApi();
+			wfile << file_path;
+			wfile.close();
+		}
+		text.loadFile(file_path);
+		setFilePath(file_path);
+
+		file.close();
+	}else {
+		text.loadFile(path1);
+		setFilePath(path1);
 	}
-
-	std::string file_path;
-	if(!getline(file, file_path)) {
-		std::ofstream wfile("se_data_current.sedatac");
-		file_path = fileDialogWinApi();
-		wfile << file_path;
-		wfile.close();
-	}
-	text.loadFile(file_path);
-	setFilePath(file_path);
-
-	file.close();
 
 	loadVars();
 
@@ -1405,6 +1439,8 @@ void Editor::checkMouse() {
 void Editor::loadLoop() {
 	while (window.isOpen()) {
 		checkMouse();
+
+		cursor.cursorTextMovingWhileMarking(*this, text, mouse.getMouseCords());
 
 		loadTotalEvents();
 
@@ -1711,7 +1747,7 @@ void Text::loadVars() {
 }
 
 void Text::loadFile(std::string file) {
-	loadFont("CONSOLA.TTF");
+	loadFont("C:/CONSOLA.TTF");
 
 	/*if(lines != NULL) {
 		delete(lines);
@@ -1730,6 +1766,10 @@ void Text::loadFile(std::string file) {
 		  lines.push_back(line);
 		}
 		myfile.close();
+	}
+
+	if(lines.size() == 0) {
+		lines.push_back("");
 	}
 
 	textDraw.setFont(font);
@@ -1917,7 +1957,13 @@ void Text::loadDraw(sf::RenderWindow &window, Editor &editor) {
 	drawText(window);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+	std::string path1 = "";
+
+	if(argc == 2) {
+		path1 = std::string(argv[1]);
+	}
+
 	Editor editor;
 	EditorMouse m_t;
 	Text s_t;
@@ -1931,5 +1977,5 @@ int main() {
 	editor.setCursorObj(s_c);
 	editor.setSliderObj(slider_t);
 	editor.loadMouse(m_t);
-	editor.loadEditor();
+	editor.loadEditor(path1);
 }
